@@ -53,38 +53,6 @@ public class FileUtilities {
     }
 
     /**
-     * areSameDisk -- returns true if two Paths exist on the same FileStore.
-     *
-     * The intended usage is to find out if "moving" a file can be done with
-     * a simple rename, or if the bits must be copied to a new disk.  In this
-     * case, pass in the source file and the destination _folder_, making sure
-     * to create the destination folder first if it doesn't exist.  (Or, pass
-     * in its parent, or parent's parent, etc.)
-     *
-     * @param pathA - an existing path
-     * @param pathB - a different existing path
-     * @return true if both Paths exist and are located on the same FileStore
-     *
-     */
-    public static boolean areSameDisk(Path pathA, Path pathB) {
-        if (Files.notExists(pathA)) {
-            logger.warning("areSameDisk: path " + pathA + " does not exist.");
-            return false;
-        }
-        if (Files.notExists(pathB)) {
-            logger.warning("areSameDisk: path " + pathB + " does not exist.");
-            return false;
-        }
-        try {
-            FileStore fsA = Files.getFileStore(pathA);
-            return fsA.equals(Files.getFileStore(pathB));
-        } catch (IOException ioe) {
-            logger.log(Level.WARNING, "IOException trying to get file stores.", ioe);
-            return false;
-        }
-    }
-
-    /**
      * Return true if the given arguments refer to the same actual, existing file on
      * the file system.  On file systems that support symbolic links, two Paths could
      * be the same file even if their locations appear completely different.

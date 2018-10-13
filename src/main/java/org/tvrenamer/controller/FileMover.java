@@ -143,6 +143,7 @@ public class FileMover implements Callable<Boolean> {
      * Based on a version originally implemented in jEdit 4.3pre9
      */
     private void copyAndDelete(final Path source, final Path dest) {
+        logger.info("trying copy and delete!!!!!");
         if (observer != null) {
             observer.initializeProgress(episode.getFileSize());
         }
@@ -201,54 +202,58 @@ public class FileMover implements Callable<Boolean> {
      *    the Path to the file to be moved
      * @param destPath
      *    the Path to which the file should be moved
-     * @param tryRename
-     *    if false, do not try to simply rename the file; always do a "copy-and-delete"
      */
-    private void doActualMove(final Path srcPath, final Path destPath, final boolean tryRename) {
+    private void doActualMove(final Path srcPath, final Path destPath) {
         logger.fine("Going to move\n  '" + srcPath + "'\n  '" + destPath + "'");
-        Path actualDest;
-        if (tryRename) {
-            try {
-                actualDest = Files.move(srcPath, destPath);
-                if (observer != null) {
-                    observer.finishProgress(true);
-                }
+        Path actualDest = null;
+        try {
+            actualDest = Files.move(srcPath, destPath);
+            if (actualDest == null) {
+                logger.info("Unable to move " + srcPath);
+                status = MoveStatus.UNMOVED;
+            } else {
                 if (destPath.equals(actualDest)) {
+                    logger.info("Succeeded in simple move of " + srcPath);
                     status = MoveStatus.RENAMED;
                 } else {
-                    logger.warning("actual destination did not match intended:\n  "
+                    logger.warning("actual destination did not match:\n  "
                                    + actualDest + "\n  " + destPath);
                     status = MoveStatus.MISNAMED;
                 }
-            } catch (IOException ioe) {
-                logger.log(Level.SEVERE, "Unable to move " + srcPath, ioe);
-                if (observer != null) {
-                    observer.finishProgress(false);
-                }
-                status = MoveStatus.FAIL_TO_MOVE;
-                return;
+                episode.setPath(actualDest);
             }
-        } else {
-            logger.info("different disks: " + srcPath + " and " + destPath);
+        } catch (IOException ioe) {
+            // logger.log(Level.SEVERE, "Unable to move " + srcPath, ioe);
+            // This is not fatal or even unexpected.  If the source and
+            // destination are on different disks, we expect this to fail.
+            // We used to try to determine ahead of time if they were on
+            // different disks, but it was too error prone.  So, we find
+            // out by just trying it, and consuming the exception.
+            logger.info("Got exception trying to move " + srcPath);
+            status = MoveStatus.UNMOVED;
+        }
+        if (status == MoveStatus.UNMOVED) {
             copyAndDelete(srcPath, destPath);
-            if (status == MoveStatus.COPIED) {
+            if (successStatus()) {
                 actualDest = destPath;
+                episode.setPath(actualDest);
             } else {
                 return;
             }
         }
-        episode.setPath(actualDest);
 
-        // TODO: why do we set the file modification time to "now"?  Would like to
-        // at least make this behavior configurable.
-        try {
-            FileTime now = FileTime.fromMillis(System.currentTimeMillis());
-            Files.setLastModifiedTime(actualDest, now);
-        } catch (IOException ioe) {
-            logger.log(Level.WARNING, "Unable to set modification time " + srcPath, ioe);
-            // Well, the file got moved to the right place already.  One could argue
-            // for returning true.  But, true is only if *everything* worked.
-            status = MoveStatus.FAIL_TO_MOVE;
+        if (successStatus()) {
+            // TODO: why do we set the file modification time to "now"?  Would like to
+            // at least make this behavior configurable.
+            try {
+                FileTime now = FileTime.fromMillis(System.currentTimeMillis());
+                Files.setLastModifiedTime(actualDest, now);
+            } catch (IOException ioe) {
+                logger.log(Level.WARNING, "Unable to set modification time " + srcPath, ioe);
+                // Well, the file got moved to the right place already.  One could argue
+                // for returning true.  But, true is only if *everything* worked.
+                status = MoveStatus.FAIL_TO_MOVE;
+            }
         }
     }
 
@@ -265,11 +270,10 @@ public class FileMover implements Callable<Boolean> {
      *    an existent ancestor of destPath
      */
     private void tryToMoveRealPaths(Path realSrc, Path destPath, Path destDir) {
-        boolean tryRename = FileUtilities.areSameDisk(realSrc, destDir);
         Path srcDir = realSrc.getParent();
 
         episode.setMoving();
-        doActualMove(realSrc, destPath, tryRename);
+        doActualMove(realSrc, destPath);
         if (successStatus()) {
             logger.info("successful:\n  " + realSrc + "\n  " + destPath);
             if (userPrefs.isRemoveEmptiedDirectories()) {
@@ -315,7 +319,6 @@ public class FileMover implements Callable<Boolean> {
             status = MoveStatus.FAIL_TO_MOVE;
             return;
         }
-        status = MoveStatus.UNMOVED;
         Path destDir = destRoot;
         String filename = destBasename + destSuffix;
         if (destIndex != null) {
@@ -351,6 +354,7 @@ public class FileMover implements Callable<Boolean> {
             return;
         }
 
+        status = MoveStatus.UNMOVED;
         tryToMoveRealPaths(realSrc, destPath, destDir);
     }
 
